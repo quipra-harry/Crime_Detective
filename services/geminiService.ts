@@ -26,8 +26,8 @@ export const generateImage = async (description: string): Promise<string> => {
     throw new Error("Image generation failed.");
 };
 
-export const editImage = async (base64ImageData: string, mimeType: string, newInstruction: string): Promise<{ image: string, text: string }> => {
-    const prompt = `You are a police sketch artist AI. Refine the portrait with this detail: "${newInstruction}". Ask one short, direct question for the next facial detail. Be concise. No filler.`;
+export const editImage = async (base64ImageData: string, mimeType: string, newInstruction: string): Promise<{ image: string | null, text: string, mimeType: string | null }> => {
+    const prompt = `You are a police sketch artist AI. Refine the portrait with this detail: "${newInstruction}". Ask one short, clarifying question for the next facial detail. Frame it as a natural, single-sentence question. Be concise but not abrupt.`;
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
         contents: {
@@ -49,6 +49,7 @@ export const editImage = async (base64ImageData: string, mimeType: string, newIn
       });
 
     let newImage: string | null = null;
+    let newMimeType: string | null = null;
     let textResponse: string = "I've updated the image. What else do you remember?";
     
     const candidate = response.candidates?.[0];
@@ -56,24 +57,21 @@ export const editImage = async (base64ImageData: string, mimeType: string, newIn
         for (const part of candidate.content.parts) {
             if (part.inlineData) {
                 newImage = part.inlineData.data;
+                newMimeType = part.inlineData.mimeType;
             } else if (part.text) {
                 textResponse = part.text;
             }
         }
     }
 
-    if(newImage) {
-        return { image: newImage, text: textResponse };
-    }
-
-    throw new Error("Image editing failed.");
+    return { image: newImage, text: textResponse, mimeType: newMimeType };
 };
 
 export const streamNextQuestion = async (conversation: string) => {
-    const prompt = `As a police sketch artist AI, ask one short, direct question for a new facial detail based on the witness statement: "${conversation}". Be extremely concise. Ask only the question. No conversational filler.`;
+    const prompt = `As a police sketch artist AI, ask one short, clarifying question for a new facial detail based on the witness statement: "${conversation}". Frame it as a natural, single-sentence question. Be concise but not abrupt.`;
     
     return ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-flash-lite',
         contents: prompt,
     });
 };

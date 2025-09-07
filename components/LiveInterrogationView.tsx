@@ -1,10 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { generateImage, editImage, streamNextQuestion } from '../services/geminiService';
+import { saveCase } from '../services/caseService';
+import type { ChatMessage, Case } from '../types';
 import { CloseIcon } from './icons/CloseIcon';
 import { MicrophoneIcon } from './icons/MicrophoneIcon';
 import { DetectiveIcon } from './icons/DetectiveIcon';
 import VoiceVisualizer from './VoiceVisualizer';
+import GenerativeAnimation from './GenerativeAnimation';
 
 const LiveInterrogationView: React.FC = () => {
   const [aiPrompt, setAiPrompt] = useState("Okay, I'm listening. Describe the suspect...");
@@ -12,7 +15,7 @@ const LiveInterrogationView: React.FC = () => {
   const [imageMimeType, setImageMimeType] = useState('image/jpeg');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [conversationHistory, setConversationHistory] = useState<string[]>([]);
+  const [conversationHistory, setConversationHistory] = useState<ChatMessage[]>([]);
 
   const isLoadingRef = useRef(isLoading);
   useEffect(() => {
@@ -24,7 +27,9 @@ const LiveInterrogationView: React.FC = () => {
     
     setError(null);
     setIsLoading(true);
-    const newHistory = [...conversationHistory, `Witness: ${transcript}`];
+    
+    const userMessage: ChatMessage = { speaker: 'Witness', text: transcript };
+    const newHistory = [...conversationHistory, userMessage];
     setConversationHistory(newHistory);
 
     try {
@@ -36,22 +41,25 @@ const LiveInterrogationView: React.FC = () => {
         
         // Stream the follow-up question
         setAiPrompt('');
-        const stream = await streamNextQuestion(newHistory.join('\n'));
+        const conversationText = newHistory.map(m => `${m.speaker}: ${m.text}`).join('\n');
+        const stream = await streamNextQuestion(conversationText);
         let fullResponse = '';
         for await (const chunk of stream) {
             const chunkText = chunk.text;
             fullResponse += chunkText;
             setAiPrompt(prev => prev + chunkText);
         }
-        setConversationHistory(prev => [...prev, `AI: ${fullResponse}`]);
+        setConversationHistory(prev => [...prev, { speaker: 'AI', text: fullResponse }]);
 
       } else {
         // Refinement
-        const { image: newImage, text: newAiText } = await editImage(generatedImage, imageMimeType, transcript);
-        setGeneratedImage(newImage);
-        setImageMimeType('image/png'); 
+        const { image: newImage, text: newAiText, mimeType: newMimeType } = await editImage(generatedImage, imageMimeType, transcript);
+        if (newImage && newMimeType) {
+            setGeneratedImage(newImage);
+            setImageMimeType(newMimeType);
+        }
         setAiPrompt(newAiText); 
-        setConversationHistory(prev => [...prev, `AI: ${newAiText}`]);
+        setConversationHistory(prev => [...prev, { speaker: 'AI', text: newAiText }]);
       }
 
     } catch (err) {
@@ -69,6 +77,21 @@ const LiveInterrogationView: React.FC = () => {
       if (isListening) {
         toggleListening();
       }
+
+      // Save the case before resetting
+      if (generatedImage && conversationHistory.length > 0) {
+        const firstWitnessMessage = conversationHistory.find(m => m.speaker === 'Witness');
+        const newCase: Case = {
+          id: `case-${Date.now()}`,
+          title: `Case #${Date.now().toString().slice(-5)}`,
+          description: firstWitnessMessage ? firstWitnessMessage.text : "No initial description.",
+          images: [generatedImage],
+          conversation: conversationHistory,
+          createdAt: Date.now(),
+        };
+        saveCase(newCase);
+      }
+
       setAiPrompt("Okay, I'm listening. Describe the suspect...");
       setGeneratedImage(null);
       setIsLoading(false);
@@ -122,14 +145,13 @@ const LiveInterrogationView: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-center bg-gray-100 rounded-lg aspect-square">
+        <div className="flex items-center justify-center bg-gray-100 rounded-lg aspect-square overflow-hidden">
             {isLoading && !generatedImage && (
-                <div className="flex flex-col items-center text-gray-500">
-                    <svg className="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p className="mt-3">Generating initial sketch...</p>
+                <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 bg-gray-900/5">
+                    <div className="w-full h-full">
+                      <GenerativeAnimation />
+                    </div>
+                    <p className="absolute bottom-4 text-gray-600/80">Composing the portrait...</p>
                 </div>
             )}
             {generatedImage && (
