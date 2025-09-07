@@ -1,10 +1,10 @@
-
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { generateImage, editImage, streamNextQuestion } from '../services/geminiService';
 import { CloseIcon } from './icons/CloseIcon';
 import { MicrophoneIcon } from './icons/MicrophoneIcon';
 import { DetectiveIcon } from './icons/DetectiveIcon';
+import VoiceVisualizer from './VoiceVisualizer';
 
 const LiveInterrogationView: React.FC = () => {
   const [aiPrompt, setAiPrompt] = useState("Okay, I'm listening. Describe the suspect...");
@@ -13,8 +13,15 @@ const LiveInterrogationView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationHistory, setConversationHistory] = useState<string[]>([]);
+
+  const isLoadingRef = useRef(isLoading);
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
   
   const handleSpeechResult = useCallback(async (transcript: string) => {
+    if (isLoadingRef.current || !transcript) return;
+    
     setError(null);
     setIsLoading(true);
     const newHistory = [...conversationHistory, `Witness: ${transcript}`];
@@ -39,11 +46,11 @@ const LiveInterrogationView: React.FC = () => {
         setConversationHistory(prev => [...prev, `AI: ${fullResponse}`]);
 
       } else {
-        // Refinement - The image editing model is conversational
+        // Refinement
         const { image: newImage, text: newAiText } = await editImage(generatedImage, imageMimeType, transcript);
         setGeneratedImage(newImage);
         setImageMimeType('image/png'); 
-        setAiPrompt(newAiText); // Use AI's conversational response directly
+        setAiPrompt(newAiText); 
         setConversationHistory(prev => [...prev, `AI: ${newAiText}`]);
       }
 
@@ -56,9 +63,12 @@ const LiveInterrogationView: React.FC = () => {
     }
   }, [generatedImage, imageMimeType, conversationHistory]);
 
-  const { isListening, isAvailable, startListening } = useSpeechRecognition(handleSpeechResult);
+  const { isListening, isAvailable, toggleListening, audioStream } = useSpeechRecognition(handleSpeechResult);
 
   const resetSession = () => {
+      if (isListening) {
+        toggleListening();
+      }
       setAiPrompt("Okay, I'm listening. Describe the suspect...");
       setGeneratedImage(null);
       setIsLoading(false);
@@ -87,21 +97,26 @@ const LiveInterrogationView: React.FC = () => {
           </div>
           <div className="flex items-center space-x-4 mt-8">
             <button
-              onClick={startListening}
-              disabled={isListening || isLoading || !isAvailable}
-              className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 ease-in-out transform hover:scale-105
-                ${isListening ? 'bg-red-500 animate-pulse' : 'bg-blue-600'} 
-                ${isLoading || !isAvailable ? 'bg-gray-400 cursor-not-allowed' : 'hover:bg-blue-700'}`}
+              onClick={toggleListening}
+              disabled={isLoading || !isAvailable}
+              className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300/50
+                ${isListening ? 'bg-transparent' : 'bg-blue-600 hover:bg-blue-700'} 
+                ${isLoading || !isAvailable ? 'bg-gray-400 cursor-not-allowed' : ''}`}
+              aria-label={isListening ? "Stop listening" : "Start listening"}
             >
-              <MicrophoneIcon className="w-10 h-10 text-white" />
+              {isListening && audioStream ? (
+                <VoiceVisualizer audioStream={audioStream} />
+              ) : (
+                <MicrophoneIcon className="w-10 h-10 text-white" />
+              )}
             </button>
             <div>
                 {isLoading ? (
                     <span className="text-lg text-gray-600">Generating...</span>
                 ) : isListening ? (
-                    <span className="text-lg text-gray-600">Listening...</span>
+                    <span className="text-lg text-gray-600">Listening... Click to stop.</span>
                 ) : (
-                    <span className="text-lg text-gray-500">Press to speak</span>
+                    <span className="text-lg text-gray-500">Click to speak</span>
                 )}
                 {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
             </div>

@@ -27,7 +27,7 @@ export const generateImage = async (description: string): Promise<string> => {
 };
 
 export const editImage = async (base64ImageData: string, mimeType: string, newInstruction: string): Promise<{ image: string, text: string }> => {
-    const prompt = `Refine the suspect's portrait based on this new information: "${newInstruction}". Keep the character consistent but apply the requested changes accurately. Respond with a brief confirmation and a follow-up question to get more detail.`;
+    const prompt = `You are a police sketch artist AI. Refine the portrait with this detail: "${newInstruction}". Ask one short, direct question for the next facial detail. Be concise. No filler.`;
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
         contents: {
@@ -51,11 +51,14 @@ export const editImage = async (base64ImageData: string, mimeType: string, newIn
     let newImage: string | null = null;
     let textResponse: string = "I've updated the image. What else do you remember?";
     
-    for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-            newImage = part.inlineData.data;
-        } else if (part.text) {
-            textResponse = part.text;
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+            if (part.inlineData) {
+                newImage = part.inlineData.data;
+            } else if (part.text) {
+                textResponse = part.text;
+            }
         }
     }
 
@@ -67,7 +70,7 @@ export const editImage = async (base64ImageData: string, mimeType: string, newIn
 };
 
 export const streamNextQuestion = async (conversation: string) => {
-    const prompt = `You are a calm, experienced police detective interrogating a witness to create a suspect sketch. Your goal is to ask clarifying questions to get more visual details. The conversation so far is: "${conversation}". Ask one, and only one, follow-up question to get more specific information about the suspect's face or distinct features. Keep your question concise and direct.`;
+    const prompt = `As a police sketch artist AI, ask one short, direct question for a new facial detail based on the witness statement: "${conversation}". Be extremely concise. Ask only the question. No conversational filler.`;
     
     return ai.models.generateContentStream({
         model: 'gemini-2.5-flash',
