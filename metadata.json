@@ -1,0 +1,7 @@
+{
+  "name": "CriminalVision AI",
+  "description": "An AI-powered application that acts as a police sketch artist. It uses voice interrogation to understand witness descriptions and generates photorealistic suspect portraits in real-time, allowing for conversational refinements.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
